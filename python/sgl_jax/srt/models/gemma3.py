@@ -17,6 +17,8 @@ import logging
 import jax
 import jax.numpy as jnp
 from flax import nnx
+from jax.sharding import NamedSharding
+from jax.sharding import PartitionSpec as P
 from transformers import PretrainedConfig
 
 from sgl_jax.srt.configs.model_config import ModelConfig
@@ -73,6 +75,7 @@ class Gemma3Attention(nnx.Module):
         dtype: jnp.dtype = jnp.bfloat16,
     ):
         self.layer_id = layer_id
+        self.mesh = mesh
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.num_kv_heads = config.num_key_value_heads
@@ -145,9 +148,12 @@ class Gemma3Attention(nnx.Module):
         q, _ = self.q_proj(hidden_states)
         k, _ = self.k_proj(hidden_states)
         v, _ = self.v_proj(hidden_states)
-        q = q.reshape(-1, self.num_heads, self.head_dim)
-        k = k.reshape(-1, self.num_kv_heads, self.head_dim)
-        v = v.reshape(-1, self.num_kv_heads, self.head_dim)
+        # Keep heads on the tensor axis: with a single KV head the default
+        # reshape would move the tensor sharding onto head_dim.
+        heads = NamedSharding(self.mesh, P("data", "tensor", None))
+        q = q.reshape(-1, self.num_heads, self.head_dim, out_sharding=heads)
+        k = k.reshape(-1, self.num_kv_heads, self.head_dim, out_sharding=heads)
+        v = v.reshape(-1, self.num_kv_heads, self.head_dim, out_sharding=heads)
         q = self.q_norm(q)
         k = self.k_norm(k)
         q, k = self.rotary_emb(forward_batch.positions, q, k)
