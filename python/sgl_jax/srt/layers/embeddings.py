@@ -521,6 +521,27 @@ class ProportionalRotaryEmbedding(RotaryEmbedding):
         self._inv_freq_np = inv_freq / factor
 
 
+class LinearScalingRotaryEmbedding(RotaryEmbedding):
+    """RoPE with linear position interpolation (HF ``rope_type="linear"``).
+
+    Positions are divided by ``scaling_factor``, i.e. ``inv_freq / factor``.
+    """
+
+    def __init__(
+        self,
+        head_size: int,
+        rotary_dim: int,
+        max_position_embeddings: int,
+        base: float,
+        is_neox_style: bool,
+        dtype: jnp.dtype,
+        scaling_factor: float,
+    ) -> None:
+        super().__init__(head_size, rotary_dim, max_position_embeddings, base, is_neox_style, dtype)
+        self.scaling_factor = scaling_factor
+        self._inv_freq_np = self._inv_freq_np / scaling_factor
+
+
 class Llama3RotaryEmbedding(RotaryEmbedding):
     def __init__(
         self,
@@ -733,6 +754,16 @@ def get_rope(
                     "partial_rotary_factor", partial_rotary_factor
                 ),
                 factor=rope_scaling.get("factor", 1.0),
+            )
+        elif scaling_type == "linear":
+            rotary_emb = LinearScalingRotaryEmbedding(
+                head_size,
+                rotary_dim,
+                max_position,
+                base,
+                is_neox_style,
+                dtype,
+                rope_scaling["factor"],
             )
         elif scaling_type == "llama3":
             scaling_factor = rope_scaling["factor"]
