@@ -55,6 +55,7 @@ class Olmo2Attention(nnx.Module):
         rms_norm_eps: float = None,
         layer_id: int = 0,
         attention_bias: bool = False,
+        sliding_window_size: int = 0,
         dtype: jnp.dtype = jnp.bfloat16,
     ):
         self.layer_id = layer_id
@@ -130,6 +131,7 @@ class Olmo2Attention(nnx.Module):
             scaling=self.scaling,
             num_kv_heads=num_kv_heads,
             layer_id=layer_id,
+            sliding_window_size=sliding_window_size,
         )
 
     @named_scope
@@ -255,6 +257,11 @@ class Olmo2DecoderLayer(nnx.Module):
             rope_scaling = None
         max_position_embeddings = getattr(config, "max_position_embeddings", 4096)
         head_dim = getattr(config, "head_dim", None)
+        # Olmo 3: per-layer sliding window (3 sliding : 1 full). OLMo 2 has no layer_types.
+        layer_types = getattr(config, "layer_types", None)
+        sliding_window_size = 0
+        if layer_types is not None and layer_types[layer_id] == "sliding_attention":
+            sliding_window_size = getattr(config, "sliding_window", 0) or 0
         self.self_attn = Olmo2Attention(
             hidden_size=config.hidden_size,
             num_heads=config.num_attention_heads,
@@ -266,6 +273,7 @@ class Olmo2DecoderLayer(nnx.Module):
             rms_norm_eps=config.rms_norm_eps,
             layer_id=layer_id,
             attention_bias=getattr(config, "attention_bias", False),
+            sliding_window_size=sliding_window_size,
             dtype=dtype,
             mesh=mesh,
         )
@@ -613,4 +621,8 @@ class Olmo2ForCausalLM(nnx.Module):
         return output, {"token_to_kv_pool": layers_kv_fused}, layers_callback_flag, None
 
 
-EntryClass = Olmo2ForCausalLM
+class Olmo3ForCausalLM(Olmo2ForCausalLM):
+    """Olmo 3 / 3.1: OLMo 2 block + interleaved sliding-window attention (layer_types) and YaRN RoPE."""
+
+
+EntryClass = [Olmo2ForCausalLM, Olmo3ForCausalLM]
