@@ -68,6 +68,8 @@ def _run_engine(model_path, prompts_ids, n_new, dtype):
         precompile_token_paddings=[64],
         precompile_bs_paddings=[4],
         log_level="error",
+        # CPU `native` backend has no SWA KV pool; the sliding window is still applied in its mask.
+        disable_hybrid_swa_memory=os.environ.get("OLMO_DISABLE_HYBRID_SWA") == "1",
     )
     try:
         # One request at a time: on the CPU `native` attention backend, a

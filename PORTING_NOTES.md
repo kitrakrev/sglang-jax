@@ -65,3 +65,13 @@ Cost estimate: v6e-1 is about $2.70/hr on demand or about $1.0–1.3/hr spot (us
 - Real-checkpoint parity (blocked by disk space), TPU correctness and performance numbers.
 - OLMo 3 (`Olmo3ForCausalLM`) adds sliding window on 3 of every 4 layers. It could be added on top of this model and `RadixAttention`'s sliding window.
 - Adding the model to a docs "supported models" list.
+
+
+## Olmo 3 / 3.1 (`Olmo3ForCausalLM`, branch `add-olmo3-support`)
+Olmo 3 is the OLMo 2 block plus two config-driven changes, so it reuses `olmo2.py`:
+- Interleaved sliding-window attention: `config.layer_types` (3 `sliding_attention` : 1 `full_attention`), window `config.sliding_window` (4096 for 7B). Passed per layer to `RadixAttention(sliding_window_size=...)`; the model runner then sets up the hybrid SWA KV pool.
+- YaRN RoPE (`factor` 8, `original_max_position_embeddings` 8192). The existing `YarnRotaryEmbedding` reproduces HF `attention_factor = 0.1*ln(factor)+1` through its mscale.
+
+CPU parity (`test/srt/models/test_olmo3_hf_parity.py`, tiny random fp32, window 3 so it really masks, YaRN on): worst |prompt logprob - HF| 1.9e-6, identical greedy tokens. The CPU `native` backend has no SWA KV pool, so that test runs with `OLMO_DISABLE_HYBRID_SWA=1` (window still applied in the mask). OLMo 2 test unchanged: 2.9e-6.
+
+    OLMO_DISABLE_HYBRID_SWA=1 JAX_PLATFORMS=cpu python -m pytest -s test/srt/models/test_olmo3_hf_parity.py
